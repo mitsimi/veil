@@ -1,54 +1,7 @@
 use crate::png::Chunk;
-use crate::{ChunkType, Error, Result, SteganographyFormat};
+use crate::{Error, Result};
 use std::fmt;
-use std::fs::File;
 use std::io::{BufReader, Read};
-
-/// Represents different types of data that can be hidden in PNG chunks
-#[derive(Debug, Clone)]
-pub enum DataType {
-    Text(String),
-    Json(String),
-    Image(Vec<u8>),
-    Jpeg(Vec<u8>),
-    Png(Vec<u8>),
-    Gif(Vec<u8>),
-    Bmp(Vec<u8>),
-    Gzip(Vec<u8>),
-    Zlib(Vec<u8>),
-    Binary(Vec<u8>),
-}
-
-/// Represents the content of extracted data
-#[derive(Debug, Clone)]
-pub enum Content {
-    Text(String),
-    Json(String),
-    Image(Vec<u8>),
-    Jpeg(Vec<u8>),
-    Png(Vec<u8>),
-    Gif(Vec<u8>),
-    Bmp(Vec<u8>),
-    Gzip(Vec<u8>),
-    Zlib(Vec<u8>),
-    Binary(Vec<u8>),
-}
-
-/// Information about hidden data found in a PNG
-#[derive(Debug, Clone)]
-pub struct HiddenData {
-    pub chunk_type: String,
-    pub data_type: DataType,
-    pub size: usize,
-}
-
-/// Extracted data with its content
-#[derive(Debug, Clone)]
-pub struct ExtractedData {
-    pub chunk_type: String,
-    pub content: Content,
-    pub size: usize,
-}
 
 #[derive(Debug, Clone)]
 pub struct Png {
@@ -58,18 +11,14 @@ pub struct Png {
 
 impl Png {
     pub const STANDARD_HEADER: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
-    pub const STANDARD_CHUNKS: [&str; 21] =   [
-        "IHDR", "PLTE", "IDAT", "IEND", "tRNS", "cHRM", "gAMA", 
-        "iCCP", "sBIT", "sRGB", "tEXt", "zTXt", "iTXt", "bKGD", 
-        "hIST", "pHYs", "sPLT", "tIME", "oFFs", "pCAL", "sCAL"
+    pub const STANDARD_CHUNKS: [&str; 21] = [
+        "IHDR", "PLTE", "IDAT", "IEND", "tRNS", "cHRM", "gAMA", "iCCP", "sBIT", "sRGB", "tEXt",
+        "zTXt", "iTXt", "bKGD", "hIST", "pHYs", "sPLT", "tIME", "oFFs", "pCAL", "sCAL",
     ];
 
-    pub fn from_file(path: &str) -> Result<Self> {
-        let file = File::open(path)?;
-        let mut reader = BufReader::new(file);
-        let mut buf = Vec::new();
-        reader.read_to_end(&mut buf)?;
-        Ok(Self::try_from(buf.as_slice())?)
+    pub fn from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
+        let data = std::fs::read(path)?;
+        Ok(Self::try_from(data.as_slice())?)
     }
 
     pub fn from_chunks(chunks: Vec<Chunk>) -> Self {
@@ -102,12 +51,6 @@ impl Png {
         &self.chunks
     }
 
-    pub fn chunk_by_type(&self, chunk_type: &str) -> Option<&Chunk> {
-        self.chunks
-            .iter()
-            .find(|chunk| chunk.chunk_type().to_string() == chunk_type)
-    }
-
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut result = self.header.to_vec();
         for chunk in &self.chunks {
@@ -116,16 +59,17 @@ impl Png {
         result
     }
 
-    pub fn to_file(&self, path: &str) -> Result<()> {
+    pub fn to_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
         use std::fs::File;
         use std::io::Write;
+
         let mut file = File::create(path)?;
         file.write_all(&self.as_bytes())?;
         Ok(())
     }
 
     /// Get all custom (non-standard) chunks in the PNG
-    pub fn custom_chunks(&self) -> Vec<&Chunk> {        
+    pub fn custom_chunks(&self) -> Vec<&Chunk> {
         self.chunks
             .iter()
             .filter(|chunk| {
@@ -133,103 +77,6 @@ impl Png {
                 !Self::STANDARD_CHUNKS.contains(&chunk_type.as_str())
             })
             .collect()
-    }
-
-    /// Detect the type of hidden data in a chunk
-    pub fn detect_data_type(&self, chunk: &Chunk) -> Option<DataType> {
-        let data = chunk.data();
-        
-        // Check for text data (UTF-8 string)
-        if let Ok(text) = String::from_utf8(data.to_vec()) {
-            if text.chars().all(|c| c.is_ascii() || !c.is_control()) {
-                return Some(DataType::Text(text));
-            }
-        }
-        
-        // Check for JSON data
-        if let Ok(text) = String::from_utf8(data.to_vec()) {
-            if text.trim().starts_with('{') || text.trim().starts_with('[') {
-                if serde_json::from_str::<serde_json::Value>(&text).is_ok() {
-                    return Some(DataType::Json(text));
-                }
-            }
-        }
-        
-        // Check for image data (PNG header)
-        if data.len() >= 8 && &data[0..8] == Self::STANDARD_HEADER {
-            return Some(DataType::Image(data.to_vec()));
-        }
-        
-        // Check for compressed data (common compression signatures)
-        if data.len() >= 2 {
-            match &data[0..2] {
-                [0x1f, 0x8b] => return Some(DataType::Gzip(data.to_vec())),
-                [0x78, 0x9c] | [0x78, 0xda] | [0x78, 0x5e] => return Some(DataType::Zlib(data.to_vec())),
-                _ => {}
-            }
-        }
-        
-        // Check for common file signatures
-        if data.len() >= 4 {
-            match &data[0..4] {
-                [0xFF, 0xD8, 0xFF, _] => return Some(DataType::Jpeg(data.to_vec())),
-                [0x89, 0x50, 0x4E, 0x47] => return Some(DataType::Png(data.to_vec())),
-                [0x47, 0x49, 0x46, 0x38] => return Some(DataType::Gif(data.to_vec())),
-                [0x42, 0x4D, _, _] => return Some(DataType::Bmp(data.to_vec())),
-                _ => {}
-            }
-        }
-        
-        // Default to binary data
-        Some(DataType::Binary(data.to_vec()))
-    }
-
-    /// Automatically detect and decode all hidden data
-    pub fn auto_detect_hidden_data(&self) -> Vec<HiddenData> {
-        let mut results = Vec::new();
-        
-        for chunk in self.custom_chunks() {
-            if let Some(data_type) = self.detect_data_type(chunk) {
-                results.push(HiddenData {
-                    chunk_type: chunk.chunk_type().to_string(),
-                    data_type,
-                    size: chunk.data().len(),
-                });
-            }
-        }
-        
-        results
-    }
-
-    /// Extract all hidden data as a structured format
-    pub fn extract_all_hidden_data(&self) -> Result<Vec<ExtractedData>> {
-        let mut extracted = Vec::new();
-        
-        for chunk in self.custom_chunks() {
-            let data_type = self.detect_data_type(chunk)
-                .ok_or("Failed to detect data type")?;
-            
-            let content = match &data_type {
-                DataType::Text(text) => Content::Text(text.clone()),
-                DataType::Json(json) => Content::Json(json.clone()),
-                DataType::Image(data) => Content::Image(data.clone()),
-                DataType::Jpeg(data) => Content::Jpeg(data.clone()),
-                DataType::Png(data) => Content::Png(data.clone()),
-                DataType::Gif(data) => Content::Gif(data.clone()),
-                DataType::Bmp(data) => Content::Bmp(data.clone()),
-                DataType::Gzip(data) => Content::Gzip(data.clone()),
-                DataType::Zlib(data) => Content::Zlib(data.clone()),
-                DataType::Binary(data) => Content::Binary(data.clone()),
-            };
-            
-            extracted.push(ExtractedData {
-                chunk_type: chunk.chunk_type().to_string(),
-                content,
-                size: chunk.data().len(),
-            });
-        }
-        
-        Ok(extracted)
     }
 }
 
@@ -247,26 +94,26 @@ impl TryFrom<&[u8]> for Png {
         }
 
         let mut chunks = Vec::new();
-        
+
         // Read chunks until we reach the end of the data
         loop {
             let mut length_bytes = [0; 4];
             match reader.read_exact(&mut length_bytes) {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(_) => break, // End of data, no more chunks
             }
-            
+
             let length = u32::from_be_bytes(length_bytes);
-            
+
             let mut chunk_type_bytes = [0; 4];
             reader.read_exact(&mut chunk_type_bytes)?;
-         
+
             let mut data = vec![0; length as usize];
             reader.read_exact(&mut data)?;
-            
+
             let mut crc_bytes = [0; 4];
             reader.read_exact(&mut crc_bytes)?;
-            
+
             let chunk_bytes: Vec<u8> = length_bytes
                 .iter()
                 .chain(chunk_type_bytes.iter())
@@ -274,7 +121,7 @@ impl TryFrom<&[u8]> for Png {
                 .chain(crc_bytes.iter())
                 .copied()
                 .collect();
-            
+
             let chunk = Chunk::try_from(chunk_bytes.as_slice())?;
             chunks.push(chunk);
         }
@@ -292,7 +139,12 @@ impl fmt::Display for Png {
         writeln!(f, "  Header: {:?}", self.header)?;
         writeln!(f, "  Chunks: {} chunks", self.chunks.len())?;
         for (i, chunk) in self.chunks.iter().enumerate() {
-            writeln!(f, "    Chunk {}: {}", i, chunk)?;
+            writeln!(
+                f,
+                "    Chunk {}: {}",
+                i,
+                chunk.data_as_string().unwrap_or_default()
+            )?;
         }
         writeln!(f, "}}")?;
         Ok(())
@@ -399,32 +251,6 @@ mod tests {
         let png = testing_png();
         let chunks = png.chunks();
         assert_eq!(chunks.len(), 3);
-    }
-
-    #[test]
-    fn test_chunk_by_type() {
-        let png = testing_png();
-        let chunk = png.chunk_by_type("FrSt").unwrap();
-        assert_eq!(&chunk.chunk_type().to_string(), "FrSt");
-        assert_eq!(&chunk.data_as_string().unwrap(), "I am the first chunk");
-    }
-
-    #[test]
-    fn test_append_chunk() {
-        let mut png = testing_png();
-        png.append_chunk(chunk_from_strings("TeSt", "Message").unwrap());
-        let chunk = png.chunk_by_type("TeSt").unwrap();
-        assert_eq!(&chunk.chunk_type().to_string(), "TeSt");
-        assert_eq!(&chunk.data_as_string().unwrap(), "Message");
-    }
-
-    #[test]
-    fn test_remove_first_chunk() {
-        let mut png = testing_png();
-        png.append_chunk(chunk_from_strings("TeSt", "Message").unwrap());
-        png.remove_first_chunk("TeSt").unwrap();
-        let chunk = png.chunk_by_type("TeSt");
-        assert!(chunk.is_none());
     }
 
     #[test]

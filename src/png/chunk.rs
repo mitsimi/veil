@@ -1,4 +1,4 @@
-use crate::chunk_type::ChunkType;
+use crate::png::chunk_type::ChunkType;
 use crate::{Error, Result};
 use crc::Crc;
 use std::fmt;
@@ -59,7 +59,6 @@ impl Chunk {
     }
 
     fn calculate_crc(&self) -> u32 {
-        let crc = Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
         let crc_data: Vec<u8> = self
             .chunk_type
             .bytes()
@@ -67,7 +66,7 @@ impl Chunk {
             .chain(self.data.iter())
             .copied()
             .collect();
-        crc.checksum(&crc_data)
+        Crc::<u32>::new(&crc::CRC_32_ISO_HDLC).checksum(&crc_data)
     }
 }
 
@@ -129,7 +128,7 @@ impl fmt::Display for Chunk {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chunk_type::ChunkType;
+    use crate::png::chunk_type::ChunkType;
     use std::str::FromStr;
 
     fn testing_chunk() -> Chunk {

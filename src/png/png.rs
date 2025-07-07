@@ -64,20 +64,63 @@ impl TryFrom<&[u8]> for Png {
         let mut reader = BufReader::new(value);
 
         let mut header = [0; 8];
-        reader.read_exact(&mut header);
+        reader.read_exact(&mut header)?;
 
         if header != Self::STANDARD_HEADER {
             return Err("Invalid PNG header".into());
         }
 
-        let mut raw_chunks = Vec::new();
-        reader.read_exact(&mut raw_chunks);
+        let mut chunks = Vec::new();
+        
+        // Read chunks until we reach the end of the data
+        loop {
+            let mut length_bytes = [0; 4];
+            match reader.read_exact(&mut length_bytes) {
+                Ok(_) => {},
+                Err(_) => break, // End of data, no more chunks
+            }
+            
+            let length = u32::from_be_bytes(length_bytes);
+            
+            let mut chunk_type_bytes = [0; 4];
+            reader.read_exact(&mut chunk_type_bytes)?;
+         
+            let mut data = vec![0; length as usize];
+            reader.read_exact(&mut data)?;
+            
+            let mut crc_bytes = [0; 4];
+            reader.read_exact(&mut crc_bytes)?;
+            let crc = u32::from_be_bytes(crc_bytes);
+            
+            let chunk_bytes: Vec<u8> = length_bytes
+                .iter()
+                .chain(chunk_type_bytes.iter())
+                .chain(data.iter())
+                .chain(crc_bytes.iter())
+                .copied()
+                .collect();
+            
+            let chunk = Chunk::try_from(chunk_bytes.as_slice())?;
+            chunks.push(chunk);
+        }
+
+        Ok(Self {
+            header: Self::STANDARD_HEADER,
+            chunks,
+        })
     }
 }
 
 impl fmt::Display for Png {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        writeln!(f, "PNG {{")?;
+        writeln!(f, "  Header: {:?}", self.header)?;
+        writeln!(f, "  Chunks: {} chunks", self.chunks.len())?;
+        for (i, chunk) in self.chunks.iter().enumerate() {
+            writeln!(f, "    Chunk {}: {}", i, chunk)?;
+        }
+        writeln!(f, "}}")?;
+        Ok(())
     }
 }
 
@@ -87,7 +130,6 @@ mod tests {
     use crate::png::Chunk;
     use crate::png::ChunkType;
     use std::convert::TryFrom;
-    use std::str::FromStr;
 
     fn testing_chunks() -> Vec<Chunk> {
         vec![

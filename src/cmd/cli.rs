@@ -2,7 +2,7 @@ use clap::{command, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
 #[command(name = "veil")]
-#[command(about = "A tool for hiding messages in PNG images", long_about = None)]
+#[command(about = "A tool for hiding and extracting data in PNG images", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -10,25 +10,31 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
+    /// Check if there is hidden data in a file
     #[command(arg_required_else_help = true)]
-    Encode {
+    Check {
+        #[arg(short = 'f', long = "file")]
         file_path: String,
-        chunk_type: String,
-        message: String,
+    },
+    /// Hide data inside a file
+    #[command(arg_required_else_help = true)]
+    #[group(id = "data_source", required = true)]
+    Hide {
+        #[arg(short = 'f', long = "file")]
+        file_path: String,
+        #[arg(short = 'd', long = "data", group = "data_source")]
+        data_path: Option<String>,
+        #[arg(short = 'm', long = "message", group = "data_source")]
+        message: Option<String>,
+        #[arg(short = 'o', long = "output")]
         output_path: Option<String>,
     },
+    /// Extract all hidden data from a file
     #[command(arg_required_else_help = true)]
-    Decode {
+    Extract {
+        #[arg(short = 'f', long = "file")]
         file_path: String,
-        chunk_type: String,
-    },
-    #[command(arg_required_else_help = true)]
-    Remove {
-        file_path: String,
-        chunk_type: String,
-    },
-    #[command(arg_required_else_help = true)]
-    Print {
-        file_path: String,
+        #[arg(short = 'o', long = "output")]
+        output_dir: Option<String>,
     },
 }

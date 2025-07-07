@@ -1,13 +1,13 @@
-# Veil - PNG Steganography Tool
+# Veil - Multi-Format Steganography Tool
 
-A Rust library and command-line tool for encoding and decoding hidden messages in PNG files using custom chunks.
+A Rust library and command-line tool for hiding and extracting data in various image formats using custom chunks. Features automatic detection and extraction of hidden data.
 
 ## Features
 
-- **Encode**: Hide messages in PNG files using custom chunk types
-- **Decode**: Extract hidden messages from PNG files
-- **Remove**: Remove specific chunks from PNG files
-- **Print**: Display PNG file structure and chunk information
+- **Check**: Detect if there is hidden data in a file
+- **Hide**: Hide any file inside a file
+- **Extract**: Automatically extract all hidden data with proper file extensions
+- **Multi-Format Support**: PNG, (others planned)
 
 ## Installation
 
@@ -22,30 +22,63 @@ cargo build --release
 ### Command Line Interface
 
 ```bash
-# Encode a message
-cargo run -- encode -f input.png -t "RuSt" -m "Hello, World!" -o output.png
+# Check if there is hidden data
+veil check image.png
+veil check image.jpg
 
-# Decode a message
-cargo run -- decode -f input.png -t "RuSt"
+# Hide a file inside an image
+veil hide image.png secret.txt -o hidden_image.png
+veil hide image.jpg secret.txt -o hidden_image.jpg
 
-# Remove a chunk
-cargo run -- remove -f input.png -t "RuSt"
+# Hide a text message
+veil hide image.png -m "Secret message" -o hidden_image.png
 
-# Print PNG information
-cargo run -- print -f input.png
+# Extract all hidden data
+veil extract image.png -o extracted/
+veil extract image.jpg -o extracted/
 ```
+
+### Supported File Formats
+
+Currently implemented:
+- **PNG**: Full support with custom chunks
+
+### Automatic Detection Features
+
+The tool can automatically detect and extract various types of hidden data:
+
+- **Text**: Plain text messages (.txt files)
+- **JSON**: Structured data (.json files)
+- **Images**: PNG, JPEG, GIF, BMP files
+- **Documents**: PDF, DOC, XLS, PPT files
+- **Compressed Data**: ZIP, Gzip compressed content
+- **Binary**: Any other binary data
 
 ### As a Library
 
 ```rust
-use veil::{encode_message, decode_message};
+use veil::{auto_detect_hidden_data, extract_all_hidden_data, hide_data};
 
-// Encode a message
-encode_message("input.png", "RuSt", "Secret message", Some("output.png"))?;
+// Check for hidden data (works with any supported format)
+let hidden_data = auto_detect_hidden_data("image.png")?;
+for data in hidden_data {
+    println!("Found {:?} data, {} bytes", data.data_type, data.size);
+}
 
-// Decode a message
-let message = decode_message("input.png", "RuSt")?;
-println!("Hidden message: {}", message);
+// Extract all hidden data
+let extracted = extract_all_hidden_data("image.jpg")?;
+for data in extracted {
+    match data.content {
+        veil::Content::Text(text) => println!("Text: {}", text),
+        veil::Content::Image(img_data) => println!("Image: {} bytes", img_data.len()),
+        // ... handle other types
+    }
+}
+
+// Hide data in any supported format
+let data = "Secret message".as_bytes().to_vec();
+let chunk_type = veil::ChunkType::from_str("TeXt")?;
+hide_data("image.png", data, chunk_type, "output.png")?;
 ```
 
 ## Project Structure
@@ -60,11 +93,11 @@ veil/
 │   │   ├── png.rs      # PNG struct and implementation
 │   │   ├── chunk.rs    # Chunk handling
 │   │   └── chunk_type.rs # Chunk type validation
+│   ├── formats/        # File format support
+│   │   └── mod.rs      # Format detection and traits
 │   └── cmd/            # Command-line interface
 │       ├── mod.rs      # Module declarations
 │       └── cli.rs      # CLI argument parsing
-├── tests/              # Integration tests (future)
-├── examples/           # Example code (future)
 └── README.md           # This file
 ```
 
@@ -82,6 +115,11 @@ cargo test
 cargo doc --open
 ```
 
-## License
+### Adding New File Formats
 
-[Add your license here] 
+To add support for a new file format:
+
+1. Add the format to the `FileFormat` enum in `src/formats/mod.rs`
+2. Implement the detection logic in `FileFormat::detect()`
+3. Implement the `SteganographyFormat` trait methods for the new format
+4. Add tests for the new format

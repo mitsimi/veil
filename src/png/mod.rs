@@ -4,4 +4,4 @@ mod png;
 
 pub use chunk::Chunk;
 pub use chunk_type::ChunkType;
-pub use png::Png;
+pub use png::{Png, DataType, Content, HiddenData, ExtractedData};

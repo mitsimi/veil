@@ -1,50 +1,40 @@
-//! Veil - A PNG steganography library
+//! Veil - A steganography library
 //! 
-//! This library provides functionality for encoding and decoding hidden messages
-//! in PNG files using custom chunks.
+//! This library provides functionality for hiding and extracting data
+//! in various file formats using custom chunks with automatic detection.
 
 pub mod png;
 pub mod cmd;
+pub mod formats;
 
-pub use png::{Chunk, ChunkType, Png};
+pub use png::{Chunk, ChunkType, Png, DataType, Content, HiddenData, ExtractedData};
 pub use cmd::{Cli, Commands};
+pub use formats::{FileFormat, SteganographyFormat};
+
 
 pub type Error = Box<dyn std::error::Error>;
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Encode a message into a PNG file
-pub fn encode_message(file_path: &str, chunk_type: &str, message: &str, output_path: Option<&str>) -> Result<()> {
-    use std::str::FromStr;
-    
-    let mut png = Png::from_file(file_path)?;
-    let chunk_type = ChunkType::from_str(chunk_type)?;
-    let chunk = Chunk::new(chunk_type, message.as_bytes().to_vec());
-    png.append_chunk(chunk);
-    
-    let output = output_path.unwrap_or(file_path);
-    png.to_file(output)?;
-    Ok(())
+/// Automatically detect all hidden data in a file
+pub fn auto_detect_hidden_data(file_path: &str) -> Result<Vec<HiddenData>> {
+    let format = FileFormat::detect(file_path)?;
+    format.auto_detect_hidden_data(file_path)
 }
 
-/// Decode a message from a PNG file
-pub fn decode_message(file_path: &str, chunk_type: &str) -> Result<String> {
-    let png = Png::from_file(file_path)?;
-    let chunk = png.chunk_by_type(chunk_type).ok_or("Chunk not found")?;
-    let message = String::from_utf8(chunk.data().to_vec())?;
-    Ok(message)
+/// Extract all hidden data from a file
+pub fn extract_all_hidden_data(file_path: &str) -> Result<Vec<ExtractedData>> {
+    let format = FileFormat::detect(file_path)?;
+    format.extract_all_hidden_data(file_path)
 }
 
-/// Remove a chunk from a PNG file
-pub fn remove_chunk(file_path: &str, chunk_type: &str) -> Result<()> {
-    let mut png = Png::from_file(file_path)?;
-    png.remove_first_chunk(chunk_type)?;
-    png.to_file(file_path)?;
-    Ok(())
+/// Get all custom chunks in a file
+pub fn list_custom_chunks(file_path: &str) -> Result<Vec<String>> {
+    let format = FileFormat::detect(file_path)?;
+    format.list_custom_chunks(file_path)
 }
 
-/// Print PNG file information
-pub fn print_png_info(file_path: &str) -> Result<()> {
-    let png = Png::from_file(file_path)?;
-    println!("{}", png);
-    Ok(())
+/// Hide data in a file
+pub fn hide_data(file_path: &str, data: Vec<u8>, chunk_type: ChunkType, output_path: &str) -> Result<()> {
+    let format = FileFormat::detect(file_path)?;
+    format.hide_data(file_path, data, chunk_type, output_path)
 } 

@@ -1,8 +1,54 @@
 use crate::png::Chunk;
-use crate::{Error, Result};
+use crate::{ChunkType, Error, Result, SteganographyFormat};
 use std::fmt;
 use std::fs::File;
 use std::io::{BufReader, Read};
+
+/// Represents different types of data that can be hidden in PNG chunks
+#[derive(Debug, Clone)]
+pub enum DataType {
+    Text(String),
+    Json(String),
+    Image(Vec<u8>),
+    Jpeg(Vec<u8>),
+    Png(Vec<u8>),
+    Gif(Vec<u8>),
+    Bmp(Vec<u8>),
+    Gzip(Vec<u8>),
+    Zlib(Vec<u8>),
+    Binary(Vec<u8>),
+}
+
+/// Represents the content of extracted data
+#[derive(Debug, Clone)]
+pub enum Content {
+    Text(String),
+    Json(String),
+    Image(Vec<u8>),
+    Jpeg(Vec<u8>),
+    Png(Vec<u8>),
+    Gif(Vec<u8>),
+    Bmp(Vec<u8>),
+    Gzip(Vec<u8>),
+    Zlib(Vec<u8>),
+    Binary(Vec<u8>),
+}
+
+/// Information about hidden data found in a PNG
+#[derive(Debug, Clone)]
+pub struct HiddenData {
+    pub chunk_type: String,
+    pub data_type: DataType,
+    pub size: usize,
+}
+
+/// Extracted data with its content
+#[derive(Debug, Clone)]
+pub struct ExtractedData {
+    pub chunk_type: String,
+    pub content: Content,
+    pub size: usize,
+}
 
 #[derive(Debug, Clone)]
 pub struct Png {
@@ -12,6 +58,11 @@ pub struct Png {
 
 impl Png {
     pub const STANDARD_HEADER: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
+    pub const STANDARD_CHUNKS: [&str; 21] =   [
+        "IHDR", "PLTE", "IDAT", "IEND", "tRNS", "cHRM", "gAMA", 
+        "iCCP", "sBIT", "sRGB", "tEXt", "zTXt", "iTXt", "bKGD", 
+        "hIST", "pHYs", "sPLT", "tIME", "oFFs", "pCAL", "sCAL"
+    ];
 
     pub fn from_file(path: &str) -> Result<Self> {
         let file = File::open(path)?;
@@ -71,6 +122,114 @@ impl Png {
         let mut file = File::create(path)?;
         file.write_all(&self.as_bytes())?;
         Ok(())
+    }
+
+    /// Get all custom (non-standard) chunks in the PNG
+    pub fn custom_chunks(&self) -> Vec<&Chunk> {        
+        self.chunks
+            .iter()
+            .filter(|chunk| {
+                let chunk_type = chunk.chunk_type().to_string();
+                !Self::STANDARD_CHUNKS.contains(&chunk_type.as_str())
+            })
+            .collect()
+    }
+
+    /// Detect the type of hidden data in a chunk
+    pub fn detect_data_type(&self, chunk: &Chunk) -> Option<DataType> {
+        let data = chunk.data();
+        
+        // Check for text data (UTF-8 string)
+        if let Ok(text) = String::from_utf8(data.to_vec()) {
+            if text.chars().all(|c| c.is_ascii() || !c.is_control()) {
+                return Some(DataType::Text(text));
+            }
+        }
+        
+        // Check for JSON data
+        if let Ok(text) = String::from_utf8(data.to_vec()) {
+            if text.trim().starts_with('{') || text.trim().starts_with('[') {
+                if serde_json::from_str::<serde_json::Value>(&text).is_ok() {
+                    return Some(DataType::Json(text));
+                }
+            }
+        }
+        
+        // Check for image data (PNG header)
+        if data.len() >= 8 && &data[0..8] == Self::STANDARD_HEADER {
+            return Some(DataType::Image(data.to_vec()));
+        }
+        
+        // Check for compressed data (common compression signatures)
+        if data.len() >= 2 {
+            match &data[0..2] {
+                [0x1f, 0x8b] => return Some(DataType::Gzip(data.to_vec())),
+                [0x78, 0x9c] | [0x78, 0xda] | [0x78, 0x5e] => return Some(DataType::Zlib(data.to_vec())),
+                _ => {}
+            }
+        }
+        
+        // Check for common file signatures
+        if data.len() >= 4 {
+            match &data[0..4] {
+                [0xFF, 0xD8, 0xFF, _] => return Some(DataType::Jpeg(data.to_vec())),
+                [0x89, 0x50, 0x4E, 0x47] => return Some(DataType::Png(data.to_vec())),
+                [0x47, 0x49, 0x46, 0x38] => return Some(DataType::Gif(data.to_vec())),
+                [0x42, 0x4D, _, _] => return Some(DataType::Bmp(data.to_vec())),
+                _ => {}
+            }
+        }
+        
+        // Default to binary data
+        Some(DataType::Binary(data.to_vec()))
+    }
+
+    /// Automatically detect and decode all hidden data
+    pub fn auto_detect_hidden_data(&self) -> Vec<HiddenData> {
+        let mut results = Vec::new();
+        
+        for chunk in self.custom_chunks() {
+            if let Some(data_type) = self.detect_data_type(chunk) {
+                results.push(HiddenData {
+                    chunk_type: chunk.chunk_type().to_string(),
+                    data_type,
+                    size: chunk.data().len(),
+                });
+            }
+        }
+        
+        results
+    }
+
+    /// Extract all hidden data as a structured format
+    pub fn extract_all_hidden_data(&self) -> Result<Vec<ExtractedData>> {
+        let mut extracted = Vec::new();
+        
+        for chunk in self.custom_chunks() {
+            let data_type = self.detect_data_type(chunk)
+                .ok_or("Failed to detect data type")?;
+            
+            let content = match &data_type {
+                DataType::Text(text) => Content::Text(text.clone()),
+                DataType::Json(json) => Content::Json(json.clone()),
+                DataType::Image(data) => Content::Image(data.clone()),
+                DataType::Jpeg(data) => Content::Jpeg(data.clone()),
+                DataType::Png(data) => Content::Png(data.clone()),
+                DataType::Gif(data) => Content::Gif(data.clone()),
+                DataType::Bmp(data) => Content::Bmp(data.clone()),
+                DataType::Gzip(data) => Content::Gzip(data.clone()),
+                DataType::Zlib(data) => Content::Zlib(data.clone()),
+                DataType::Binary(data) => Content::Binary(data.clone()),
+            };
+            
+            extracted.push(ExtractedData {
+                chunk_type: chunk.chunk_type().to_string(),
+                content,
+                size: chunk.data().len(),
+            });
+        }
+        
+        Ok(extracted)
     }
 }
 

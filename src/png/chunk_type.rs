@@ -14,6 +14,10 @@ impl ChunkType {
         self.bytes
     }
 
+    pub fn to_string(&self) -> String {
+        self.bytes.iter().map(|b| char::from(*b)).collect()
+    }
+
     pub fn is_critical(&self) -> bool {
         self.bytes[0] & 0b00100000 == 0b00000000
     }

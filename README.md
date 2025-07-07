@@ -1,18 +1,27 @@
 # Veil - Multi-Format Steganography Tool
 
-A Rust library and command-line tool for hiding and extracting data in various image formats using custom chunks. Features automatic detection and extraction of hidden data.
+A Rust library and command-line tool for hiding and extracting data in various file formats using steganography techniques. Features automatic format detection and a clean abstraction for multiple file types.
 
 ## Features
 
 - **Check**: Detect if there is hidden data in a file
-- **Hide**: Hide any file inside a file
-- **Extract**: Automatically extract all hidden data with proper file extensions
-- **Multi-Format Support**: PNG, (others planned)
+- **Hide**: Hide text messages or files inside other files
+- **Extract**: Extract all hidden data from files
+- **Multi-Format Support**: Currently PNG (extensible design for more formats)
+- **Clean API**: Simple trait-based design for easy library usage
+
+### Planned:
+
+- **More File Formats**: Like JPEG or PDF
+- **Better Detection**: Use a more sophisticated approach to type detection (e.g.: headers)
+- **Multiple chunks**: Support splitting large data across multiple chunks
+- **Encryption**: Add optional encryption of hidden data
+- **Compression**: Compress data before hiding
 
 ## Installation
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/mitsimi/veil.git
 cd veil
 cargo build --release
 ```
@@ -23,103 +32,114 @@ cargo build --release
 
 ```bash
 # Check if there is hidden data
-veil check image.png
-veil check image.jpg
+veil check -f image.png
+
+# Hide a text message inside an image
+veil hide -f image.png -m "Secret message" -o hidden_image.png
 
 # Hide a file inside an image
-veil hide image.png secret.txt -o hidden_image.png
-veil hide image.jpg secret.txt -o hidden_image.jpg
+veil hide -f image.png -d secret.txt -o hidden_image.png
 
-# Hide a text message
-veil hide image.png -m "Secret message" -o hidden_image.png
-
-# Extract all hidden data
-veil extract image.png -o extracted/
-veil extract image.jpg -o extracted/
+# Extract hidden data
+veil extract -f hidden_image.png -o extracted/
 ```
-
-### Supported File Formats
-
-Currently implemented:
-- **PNG**: Full support with custom chunks
-
-### Automatic Detection Features
-
-The tool can automatically detect and extract various types of hidden data:
-
-- **Text**: Plain text messages (.txt files)
-- **JSON**: Structured data (.json files)
-- **Images**: PNG, JPEG, GIF, BMP files
-- **Documents**: PDF, DOC, XLS, PPT files
-- **Compressed Data**: ZIP, Gzip compressed content
-- **Binary**: Any other binary data
 
 ### As a Library
 
+The library provides a clean, extensible API through the `Steganography` trait:
+
 ```rust
-use veil::{auto_detect_hidden_data, extract_all_hidden_data, hide_data};
+use veil::{SteganographyFile, Steganography};
 
-// Check for hidden data (works with any supported format)
-let hidden_data = auto_detect_hidden_data("image.png")?;
-for data in hidden_data {
-    println!("Found {:?} data, {} bytes", data.data_type, data.size);
+// Load any supported file format (automatic detection)
+let mut file = SteganographyFile::from_file("image.png")?;
+
+// Check if file contains hidden data
+if file.has_hidden_data() {
+    println!("Hidden data detected!");
 }
 
-// Extract all hidden data
-let extracted = extract_all_hidden_data("image.jpg")?;
-for data in extracted {
-    match data.content {
-        veil::Content::Text(text) => println!("Text: {}", text),
-        veil::Content::Image(img_data) => println!("Image: {} bytes", img_data.len()),
-        // ... handle other types
+// Hide data (text or binary)
+let secret_message = b"This is my secret message";
+file.hide_data(secret_message)?;
+
+// Save the modified file
+file.save_to_file("output.png")?;
+
+// Extract hidden data
+let hidden_data = file.extract_data()?;
+let message = String::from_utf8(hidden_data)?;
+println!("Secret: {}", message);
+```
+
+#### Working with specific formats
+
+```rust
+use veil::png::{Png, Chunk, ChunkType};
+use std::str::FromStr;
+
+// Direct PNG manipulation
+let mut png = Png::from_file("image.png")?;
+
+// Create custom chunk
+let chunk_type = ChunkType::from_str("tEXt")?;
+let chunk = Chunk::new(chunk_type, b"metadata".to_vec());
+png.append_chunk(chunk);
+
+// Save modified PNG
+png.to_file("output.png")?;
+
+// Extract custom chunks
+let custom_chunks = png.custom_chunks();
+for chunk in custom_chunks {
+    println!("Found chunk: {}", chunk.chunk_type());
+    println!("Data: {:?}", chunk.data_as_string());
+}
+```
+
+#### Adding New File Formats
+
+The library is designed for easy extension. To add a new format:
+
+```rust
+// 1. Add to the enum
+pub enum SteganographyFile {
+    Png(png::Png),
+    Jpeg(jpeg::Jpeg),  // New format
+}
+
+// 2. Update the match statements in the Steganography impl
+impl Steganography for SteganographyFile {
+    fn hide_data(&mut self, data: &[u8]) -> Result<()> {
+        match self {
+            SteganographyFile::Png(png) => { /* PNG logic */ }
+            SteganographyFile::Jpeg(jpeg) => { /* JPEG logic */ }
+        }
     }
+    // ... other methods
 }
 
-// Hide data in any supported format
-let data = "Secret message".as_bytes().to_vec();
-let chunk_type = veil::ChunkType::from_str("TeXt")?;
-hide_data("image.png", data, chunk_type, "output.png")?;
+// 3. Add detection logic in from_file()
 ```
 
-## Project Structure
+## Supported File Formats
 
-```
-veil/
-├── src/
-│   ├── lib.rs          # Library entry point and public API
-│   ├── main.rs         # Binary entry point (CLI)
-│   ├── png/            # PNG handling module
-│   │   ├── mod.rs      # Module declarations
-│   │   ├── png.rs      # PNG struct and implementation
-│   │   ├── chunk.rs    # Chunk handling
-│   │   └── chunk_type.rs # Chunk type validation
-│   ├── formats/        # File format support
-│   │   └── mod.rs      # Format detection and traits
-│   └── cmd/            # Command-line interface
-│       ├── mod.rs      # Module declarations
-│       └── cli.rs      # CLI argument parsing
-└── README.md           # This file
-```
+### Currently Implemented
 
-## Development
+- **PNG**: Uses custom chunks with type "vEiL" to store hidden data
+  - Leverages PNG's built-in chunk system
+  - Preserves image integrity and compatibility
+  - Supports any binary data
 
-### Running Tests
+### Planned Formats
 
-```bash
-cargo test
-```
+- **JPEG**: LSB (Least Significant Bit) manipulation in pixel data
+- **PDF**: Metadata insertion and hidden streams
 
-### Building Documentation
+## Design Philosophy
 
-```bash
-cargo doc --open
-```
-
-### Adding New File Formats
-
-To add support for a new file format:
-
-1. Add the format to the `FileFormat` enum in `src/formats/mod.rs`
-2. Implement the detection logic in `FileFormat::detect()`
-3. Implement the `SteganographyFormat` trait methods for the new format
-4. Add tests for the new format
+- **Simplicity**: Clean API with minimal complexity
+- **Extensibility**: Easy to add new file formats
+- **Safety**: Leverages Rust's type system for correctness
+- **Performance**: Zero-copy operations where possible
+- **Compatibility**: Generated files work with standard tools

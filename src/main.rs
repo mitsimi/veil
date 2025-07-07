@@ -1,131 +1,100 @@
 use clap::Parser;
-use veil::{Cli, Commands, auto_detect_hidden_data, extract_all_hidden_data, hide_data};
-use std::str::FromStr;
+use std::path::Path;
+use veil::{Cli, Commands, Steganography, SteganographyFile};
 
 fn main() -> veil::Result<()> {
     let args = Cli::parse();
 
     match args.command {
         Commands::Check { file_path } => {
-            let hidden_data = auto_detect_hidden_data(&file_path)?;
-            if hidden_data.is_empty() {
-                println!("No hidden data found in {}", file_path);
+            // Load the file and check if it contains hidden data
+            let file = SteganographyFile::from_file(&file_path)?;
+
+            if file.has_hidden_data() {
+                println!("✓ Hidden data found in {}", file_path);
             } else {
-                println!("Found {} hidden data items in {}:", hidden_data.len(), file_path);
-                for (i, data) in hidden_data.iter().enumerate() {
-                    println!("  {}. Type: {:?}, Size: {} bytes", 
-                            i + 1, data.data_type, data.size);
-                }
+                println!("✗ No hidden data found in {}", file_path);
             }
         }
-        Commands::Hide { file_path, data_path, message, output_path } => {
-            let (data, chunk_type, source_desc) = if let Some(data_path_val) = &data_path {
-                // Hide a file
-                let data = std::fs::read(data_path_val)?;
-                let chunk_type = get_chunk_type_from_extension(data_path_val);
-                (data, chunk_type, format!("file from {}", data_path_val))
-            } else if let Some(message_text) = &message {
+
+        Commands::Hide {
+            file_path,
+            data_path,
+            message,
+            output_path,
+        } => {
+            // Load the host file
+            let mut file = SteganographyFile::from_file(&file_path)?;
+
+            // Determine what data to hide (either from file or message)
+            let data_to_hide = if let Some(data_path) = data_path {
+                // Hide data from a file
+                std::fs::read(&data_path)?
+            } else if let Some(message) = message {
                 // Hide a text message
-                let data = message_text.as_bytes().to_vec();
-                let chunk_type = veil::ChunkType::from_str("TeXt")?;
-                (data, chunk_type, "message".to_string())
+                message.into_bytes()
             } else {
-                return Err("Either data_path or message must be provided".into());
+                return Err("Either --data-path or --message must be provided".into());
             };
-            
-            // Save the result
-            let output = output_path.unwrap_or_else(|| format!("hidden_{}", file_path));
-            hide_data(&file_path, data, chunk_type, &output)?;
-            
-            println!("{} hidden in {}", source_desc, output);
+
+            // Hide the data
+            file.hide_data(&data_to_hide)?;
+
+            // Determine output path (use input path with "_hidden" suffix if not provided)
+            let output_file = match output_path {
+                Some(path) => path,
+                None => {
+                    let input_path = Path::new(&file_path);
+                    let stem = input_path.file_stem().unwrap().to_string_lossy();
+                    let extension = input_path.extension().unwrap().to_string_lossy();
+                    format!("{}_hidden.{}", stem, extension)
+                }
+            };
+
+            // Save to output file
+            file.save_to_file(&output_file)?;
+
+            println!("✓ Data hidden successfully in {}", output_file);
+            println!("  Hidden {} bytes", data_to_hide.len());
         }
-        Commands::Extract { file_path, output_dir } => {
-            let extracted = extract_all_hidden_data(&file_path)?;
-            if extracted.is_empty() {
-                println!("No hidden data found in {}", file_path);
-                return Ok(());
-            }
-            
-            let output_dir = output_dir.unwrap_or_else(|| "extracted".to_string());
-            std::fs::create_dir_all(&output_dir)?;
-            
-            println!("Extracting {} hidden data items from {} to '{}':", 
-                    extracted.len(), file_path, output_dir);
-            
-            for (i, data) in extracted.iter().enumerate() {
-                let filename = format!("{}/hidden_data_{}", output_dir, i + 1);
-                match &data.content {
-                    veil::Content::Text(text) => {
-                        std::fs::write(format!("{}.txt", filename), text)?;
-                        println!("  {}. Text data saved to {}.txt", i + 1, filename);
-                    }
-                    veil::Content::Json(json) => {
-                        std::fs::write(format!("{}.json", filename), json)?;
-                        println!("  {}. JSON data saved to {}.json", i + 1, filename);
-                    }
-                    veil::Content::Image(data) | veil::Content::Png(data) => {
-                        std::fs::write(format!("{}.png", filename), data)?;
-                        println!("  {}. PNG image saved to {}.png", i + 1, filename);
-                    }
-                    veil::Content::Jpeg(data) => {
-                        std::fs::write(format!("{}.jpg", filename), data)?;
-                        println!("  {}. JPEG image saved to {}.jpg", i + 1, filename);
-                    }
-                    veil::Content::Gif(data) => {
-                        std::fs::write(format!("{}.gif", filename), data)?;
-                        println!("  {}. GIF image saved to {}.gif", i + 1, filename);
-                    }
-                    veil::Content::Bmp(data) => {
-                        std::fs::write(format!("{}.bmp", filename), data)?;
-                        println!("  {}. BMP image saved to {}.bmp", i + 1, filename);
-                    }
-                    veil::Content::Gzip(data) => {
-                        std::fs::write(format!("{}.gz", filename), data)?;
-                        println!("  {}. Gzip data saved to {}.gz", i + 1, filename);
-                    }
-                    veil::Content::Zlib(data) => {
-                        std::fs::write(format!("{}.zlib", filename), data)?;
-                        println!("  {}. Zlib data saved to {}.zlib", i + 1, filename);
-                    }
-                    veil::Content::Binary(data) => {
-                        std::fs::write(format!("{}.bin", filename), data)?;
-                        println!("  {}. Binary data saved to {}.bin", i + 1, filename);
-                    }
+
+        Commands::Extract {
+            file_path,
+            output_dir,
+        } => {
+            // Load the file
+            let file = SteganographyFile::from_file(&file_path)?;
+
+            // Extract the hidden data
+            let hidden_data = file.extract_data()?;
+
+            // Determine output directory (use current directory if not provided)
+            let output_directory = output_dir.unwrap_or_else(|| ".".to_string());
+
+            // Create output directory if it doesn't exist
+            std::fs::create_dir_all(&output_directory)?;
+
+            // Save extracted data to a file
+            let output_file = Path::new(&output_directory).join("extracted_data.bin");
+            std::fs::write(&output_file, &hidden_data)?;
+
+            println!(
+                "✓ Extracted {} bytes to {}",
+                hidden_data.len(),
+                output_file.display()
+            );
+
+            // Try to display as text if it's valid UTF-8
+            match String::from_utf8(hidden_data.clone()) {
+                Ok(text) => {
+                    println!("  Content (as text): {}", text);
+                }
+                Err(_) => {
+                    println!("  Content: Binary data (not valid UTF-8)");
                 }
             }
         }
     }
 
     Ok(())
-}
-
-/// Generate a chunk type based on file extension
-fn get_chunk_type_from_extension(file_path: &str) -> veil::ChunkType {
-    use std::str::FromStr;
-    
-    let extension = std::path::Path::new(file_path)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or("bin")
-        .to_lowercase();
-    
-    let chunk_type = match extension.as_str() {
-        "txt" | "text" => "TeXt",
-        "json" => "JSON",
-        "png" => "PNG_",
-        "jpg" | "jpeg" => "JPEG",
-        "gif" => "GIF_",
-        "bmp" => "BMP_",
-        "zip" | "gz" => "ZIP_",
-        "pdf" => "PDF_",
-        "doc" | "docx" => "DOC_",
-        "xls" | "xlsx" => "XLS_",
-        "ppt" | "pptx" => "PPT_",
-        _ => "DATA",
-    };
-    
-    veil::ChunkType::from_str(chunk_type).unwrap_or_else(|_| {
-        // Fallback to a safe chunk type
-        veil::ChunkType::from_str("DATA").unwrap()
-    })
 }

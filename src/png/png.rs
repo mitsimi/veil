@@ -1,6 +1,7 @@
 use crate::png::Chunk;
 use crate::{Error, Result};
 use std::fmt;
+use std::fs::File;
 use std::io::{BufReader, Read};
 
 #[derive(Debug, Clone)]
@@ -11,6 +12,14 @@ pub struct Png {
 
 impl Png {
     pub const STANDARD_HEADER: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
+
+    pub fn from_file(path: &str) -> Result<Self> {
+        let file = File::open(path)?;
+        let mut reader = BufReader::new(file);
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf)?;
+        Ok(Self::try_from(buf.as_slice())?)
+    }
 
     pub fn from_chunks(chunks: Vec<Chunk>) -> Self {
         Self {
@@ -55,6 +64,14 @@ impl Png {
         }
         result
     }
+
+    pub fn to_file(&self, path: &str) -> Result<()> {
+        use std::fs::File;
+        use std::io::Write;
+        let mut file = File::create(path)?;
+        file.write_all(&self.as_bytes())?;
+        Ok(())
+    }
 }
 
 impl TryFrom<&[u8]> for Png {
@@ -90,7 +107,6 @@ impl TryFrom<&[u8]> for Png {
             
             let mut crc_bytes = [0; 4];
             reader.read_exact(&mut crc_bytes)?;
-            let crc = u32::from_be_bytes(crc_bytes);
             
             let chunk_bytes: Vec<u8> = length_bytes
                 .iter()

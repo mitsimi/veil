@@ -2,6 +2,21 @@
 name = "veil"
 version = "0.1.0"
 edition = "2024"
+authors = ["mitsimi"]
+description = "A PNG steganography tool for encoding and decoding hidden messages"
+license = "MIT"
+repository = "https://github.com/mitsimi/veil"
+keywords = ["png", "steganography", "image", "encoding", "decoding"]
+categories = ["encoding", "multimedia"]
 
 [dependencies]
+clap = { version = "4.5.40", features = ["derive"] }
 crc = "3.3.0"
+
+[[bin]]
+name = "veil"
+path = "src/main.rs"
+
+[lib]
+name = "veil"
+path = "src/lib.rs"

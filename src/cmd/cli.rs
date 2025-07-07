@@ -1,4 +1,4 @@
-use clap::{command, Parser, Subcommand};
+use clap::{ArgGroup, Parser, Subcommand, command};
 
 #[derive(Debug, Parser)]
 #[command(name = "veil")]
@@ -18,14 +18,20 @@ pub enum Commands {
     },
     /// Hide data inside a file
     #[command(arg_required_else_help = true)]
-    #[group(id = "data_source", required = true)]
+    #[command(group(
+        ArgGroup::new("input")
+            .args(["data_path", "message"])
+    ))]
     Hide {
         #[arg(short = 'f', long = "file")]
         file_path: String,
-        #[arg(short = 'd', long = "data", group = "data_source")]
+
+        #[arg(short = 'd', long = "data", group = "input")]
         data_path: Option<String>,
-        #[arg(short = 'm', long = "message", group = "data_source")]
+
+        #[arg(short = 'm', long = "message", group = "input")]
         message: Option<String>,
+
         #[arg(short = 'o', long = "output")]
         output_path: Option<String>,
     },

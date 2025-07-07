@@ -40,6 +40,9 @@ veil hide -f image.png -m "Secret message" -o hidden_image.png
 # Hide a file inside an image
 veil hide -f image.png -d secret.txt -o hidden_image.png
 
+# Hide piped data
+echo "Secret message" | veil hide -f image.png -o hidden_image.png
+
 # Extract hidden data
 veil extract -f hidden_image.png -o extracted/
 ```

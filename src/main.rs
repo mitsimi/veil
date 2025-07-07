@@ -1,5 +1,5 @@
 use clap::Parser;
-use std::path::Path;
+use std::{io::Read, path::Path};
 use veil::{Cli, Commands, Steganography, SteganographyFile};
 
 fn main() -> veil::Result<()> {
@@ -26,7 +26,7 @@ fn main() -> veil::Result<()> {
             // Load the host file
             let mut file = SteganographyFile::from_file(&file_path)?;
 
-            // Determine what data to hide (either from file or message)
+            // Determine what data to hide (either from file, message or stdin)
             let data_to_hide = if let Some(data_path) = data_path {
                 // Hide data from a file
                 std::fs::read(&data_path)?
@@ -34,7 +34,9 @@ fn main() -> veil::Result<()> {
                 // Hide a text message
                 message.into_bytes()
             } else {
-                return Err("Either --data-path or --message must be provided".into());
+                let mut buffer = Vec::new();
+                std::io::stdin().read_to_end(&mut buffer)?;
+                buffer
             };
 
             // Hide the data

@@ -3,6 +3,7 @@ use crate::{Error, Result};
 use std::fmt;
 use std::io::{BufReader, Read};
 
+/// Represents a PNG image, including its header and chunks.
 #[derive(Debug, Clone)]
 pub struct Png {
     header: [u8; 8],
@@ -16,11 +17,13 @@ impl Png {
         "zTXt", "iTXt", "bKGD", "hIST", "pHYs", "sPLT", "tIME", "oFFs", "pCAL", "sCAL",
     ];
 
+    /// Reads a PNG from a file at the given path.
     pub fn from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
         let data = std::fs::read(path)?;
         Ok(Self::try_from(data.as_slice())?)
     }
 
+    /// Creates a PNG from a vector of chunks, using the standard PNG header.
     pub fn from_chunks(chunks: Vec<Chunk>) -> Self {
         Self {
             header: Self::STANDARD_HEADER,
@@ -28,10 +31,12 @@ impl Png {
         }
     }
 
+    /// Appends a chunk to the PNG.
     pub fn append_chunk(&mut self, chunk: Chunk) {
         self.chunks.push(chunk);
     }
 
+    /// Removes and returns the first chunk of the given type, or returns an error if not found.
     pub fn remove_first_chunk(&mut self, chunk_type: &str) -> Result<Chunk> {
         match self
             .chunks
@@ -43,14 +48,17 @@ impl Png {
         }
     }
 
+    /// Returns a reference to the PNG header bytes.
     pub fn header(&self) -> &[u8; 8] {
         &self.header
     }
 
+    /// Returns a slice of all chunks in the PNG.
     pub fn chunks(&self) -> &[Chunk] {
         &self.chunks
     }
 
+    /// Serializes the PNG to a vector of bytes.
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut result = self.header.to_vec();
         for chunk in &self.chunks {
@@ -59,6 +67,7 @@ impl Png {
         result
     }
 
+    /// Writes the PNG to a file at the given path.
     pub fn to_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
         use std::fs::File;
         use std::io::Write;
@@ -80,6 +89,7 @@ impl Png {
     }
 }
 
+/// Implements conversion from a byte slice to a PNG, validating the header and parsing all chunks.
 impl TryFrom<&[u8]> for Png {
     type Error = Error;
 

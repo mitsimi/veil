@@ -151,8 +151,9 @@ impl fmt::Display for Png {
         for (i, chunk) in self.chunks.iter().enumerate() {
             writeln!(
                 f,
-                "    Chunk {}: {}",
+                "    Chunk {}: Type: {}, Data: {}",
                 i,
+                chunk.chunk_type(),
                 chunk.data_as_string().unwrap_or_default()
             )?;
         }

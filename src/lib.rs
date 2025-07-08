@@ -38,7 +38,6 @@ pub enum SteganographyFile {
 }
 
 impl SteganographyFile {
-    /// Detect file format and load the appropriate type from a file path
     pub fn from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
         let path_ref = path.as_ref();
 
@@ -64,7 +63,6 @@ impl Steganography for SteganographyFile {
                 let chunk_type = png::ChunkType::from_str("vEiL")?;
                 let chunk = png::Chunk::new(chunk_type, data.to_vec());
 
-                // Add the chunk to the PNG
                 png.append_chunk(chunk);
                 Ok(())
             }
@@ -74,10 +72,8 @@ impl Steganography for SteganographyFile {
     fn extract_data(&self) -> Result<Vec<u8>> {
         match self {
             SteganographyFile::Png(png) => {
-                // Look for our custom "vEiL" chunks and extract their data
                 let custom_chunks = png.custom_chunks();
 
-                // Filter for our specific chunk type
                 let veil_chunks: Vec<_> = custom_chunks
                     .into_iter()
                     .filter(|chunk| chunk.chunk_type().to_string() == "vEiL")
@@ -87,7 +83,7 @@ impl Steganography for SteganographyFile {
                     return Err("No hidden data found".into());
                 }
 
-                // For now, extract data from the first vEiL chunk
+                // TODO: For now, extract data from the first vEiL chunk
                 // In the future, we could concatenate multiple chunks
                 let data = veil_chunks[0].data().to_vec();
                 Ok(data)
@@ -98,7 +94,6 @@ impl Steganography for SteganographyFile {
     fn has_hidden_data(&self) -> bool {
         match self {
             SteganographyFile::Png(png) => {
-                // Check if there are any of our "vEiL" chunks specifically
                 png.custom_chunks()
                     .iter()
                     .any(|chunk| chunk.chunk_type().to_string() == "vEiL")
@@ -119,7 +114,6 @@ mod tests {
 
     #[test]
     fn test_steganography_end_to_end() {
-        // Create a simple PNG with test chunks
         let chunks = vec![
             test_chunk("IHDR", b"fake header data"),
             test_chunk("IDAT", b"fake image data"),
@@ -128,31 +122,24 @@ mod tests {
         let png = png::Png::from_chunks(chunks);
         let mut stego_file = SteganographyFile::Png(png);
 
-        // Test data to hide
         let secret_message = b"This is a secret message!";
 
-        // Initially should have no hidden data
         assert!(!stego_file.has_hidden_data());
 
-        // Hide the data
         stego_file.hide_data(secret_message).unwrap();
 
-        // Now should detect hidden data
         assert!(stego_file.has_hidden_data());
 
-        // Extract and verify the data
         let extracted = stego_file.extract_data().unwrap();
         assert_eq!(extracted, secret_message);
     }
 
     #[test]
     fn test_no_hidden_data_error() {
-        // Create a PNG without any hidden data
         let chunks = vec![test_chunk("IHDR", b"fake header data")];
         let png = png::Png::from_chunks(chunks);
         let stego_file = SteganographyFile::Png(png);
 
-        // Should return error when trying to extract from file without hidden data
         assert!(stego_file.extract_data().is_err());
         assert!(!stego_file.has_hidden_data());
     }

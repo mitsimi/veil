@@ -51,7 +51,7 @@ impl Chunk {
 
     /// Returns the chunk data as a UTF-8 string, or an error if invalid.
     pub fn data_as_string(&self) -> Result<String> {
-        Ok(String::from_utf8(self.data.clone()).unwrap())
+        String::from_utf8(self.data.clone()).map_err(|e| e.into())
     }
 
     /// Serializes the chunk to a vector of bytes.

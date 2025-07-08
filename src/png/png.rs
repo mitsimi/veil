@@ -1,9 +1,9 @@
 use crate::png::Chunk;
 use crate::{Error, Result};
 use std::fmt;
-use std::fs::File;
 use std::io::{BufReader, Read};
 
+/// Represents a PNG image, including its header and chunks.
 #[derive(Debug, Clone)]
 pub struct Png {
     header: [u8; 8],
@@ -12,15 +12,18 @@ pub struct Png {
 
 impl Png {
     pub const STANDARD_HEADER: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
+    pub const STANDARD_CHUNKS: [&str; 21] = [
+        "IHDR", "PLTE", "IDAT", "IEND", "tRNS", "cHRM", "gAMA", "iCCP", "sBIT", "sRGB", "tEXt",
+        "zTXt", "iTXt", "bKGD", "hIST", "pHYs", "sPLT", "tIME", "oFFs", "pCAL", "sCAL",
+    ];
 
-    pub fn from_file(path: &str) -> Result<Self> {
-        let file = File::open(path)?;
-        let mut reader = BufReader::new(file);
-        let mut buf = Vec::new();
-        reader.read_to_end(&mut buf)?;
-        Ok(Self::try_from(buf.as_slice())?)
+    /// Reads a PNG from a file at the given path.
+    pub fn from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
+        let data = std::fs::read(path)?;
+        Ok(Self::try_from(data.as_slice())?)
     }
 
+    /// Creates a PNG from a vector of chunks, using the standard PNG header.
     pub fn from_chunks(chunks: Vec<Chunk>) -> Self {
         Self {
             header: Self::STANDARD_HEADER,
@@ -28,10 +31,12 @@ impl Png {
         }
     }
 
+    /// Appends a chunk to the PNG.
     pub fn append_chunk(&mut self, chunk: Chunk) {
         self.chunks.push(chunk);
     }
 
+    /// Removes and returns the first chunk of the given type, or returns an error if not found.
     pub fn remove_first_chunk(&mut self, chunk_type: &str) -> Result<Chunk> {
         match self
             .chunks
@@ -43,20 +48,17 @@ impl Png {
         }
     }
 
+    /// Returns a reference to the PNG header bytes.
     pub fn header(&self) -> &[u8; 8] {
         &self.header
     }
 
+    /// Returns a slice of all chunks in the PNG.
     pub fn chunks(&self) -> &[Chunk] {
         &self.chunks
     }
 
-    pub fn chunk_by_type(&self, chunk_type: &str) -> Option<&Chunk> {
-        self.chunks
-            .iter()
-            .find(|chunk| chunk.chunk_type().to_string() == chunk_type)
-    }
-
+    /// Serializes the PNG to a vector of bytes.
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut result = self.header.to_vec();
         for chunk in &self.chunks {
@@ -65,15 +67,29 @@ impl Png {
         result
     }
 
-    pub fn to_file(&self, path: &str) -> Result<()> {
+    /// Writes the PNG to a file at the given path.
+    pub fn to_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
         use std::fs::File;
         use std::io::Write;
+
         let mut file = File::create(path)?;
         file.write_all(&self.as_bytes())?;
         Ok(())
     }
+
+    /// Get all custom (non-standard) chunks in the PNG
+    pub fn custom_chunks(&self) -> Vec<&Chunk> {
+        self.chunks
+            .iter()
+            .filter(|chunk| {
+                let chunk_type = chunk.chunk_type().to_string();
+                !Self::STANDARD_CHUNKS.contains(&chunk_type.as_str())
+            })
+            .collect()
+    }
 }
 
+/// Implements conversion from a byte slice to a PNG, validating the header and parsing all chunks.
 impl TryFrom<&[u8]> for Png {
     type Error = Error;
 
@@ -88,26 +104,26 @@ impl TryFrom<&[u8]> for Png {
         }
 
         let mut chunks = Vec::new();
-        
+
         // Read chunks until we reach the end of the data
         loop {
             let mut length_bytes = [0; 4];
             match reader.read_exact(&mut length_bytes) {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(_) => break, // End of data, no more chunks
             }
-            
+
             let length = u32::from_be_bytes(length_bytes);
-            
+
             let mut chunk_type_bytes = [0; 4];
             reader.read_exact(&mut chunk_type_bytes)?;
-         
+
             let mut data = vec![0; length as usize];
             reader.read_exact(&mut data)?;
-            
+
             let mut crc_bytes = [0; 4];
             reader.read_exact(&mut crc_bytes)?;
-            
+
             let chunk_bytes: Vec<u8> = length_bytes
                 .iter()
                 .chain(chunk_type_bytes.iter())
@@ -115,7 +131,7 @@ impl TryFrom<&[u8]> for Png {
                 .chain(crc_bytes.iter())
                 .copied()
                 .collect();
-            
+
             let chunk = Chunk::try_from(chunk_bytes.as_slice())?;
             chunks.push(chunk);
         }
@@ -133,7 +149,13 @@ impl fmt::Display for Png {
         writeln!(f, "  Header: {:?}", self.header)?;
         writeln!(f, "  Chunks: {} chunks", self.chunks.len())?;
         for (i, chunk) in self.chunks.iter().enumerate() {
-            writeln!(f, "    Chunk {}: {}", i, chunk)?;
+            writeln!(
+                f,
+                "    Chunk {}: Type: {}, Data: {}",
+                i,
+                chunk.chunk_type(),
+                chunk.data_as_string().unwrap_or_default()
+            )?;
         }
         writeln!(f, "}}")?;
         Ok(())
@@ -240,32 +262,6 @@ mod tests {
         let png = testing_png();
         let chunks = png.chunks();
         assert_eq!(chunks.len(), 3);
-    }
-
-    #[test]
-    fn test_chunk_by_type() {
-        let png = testing_png();
-        let chunk = png.chunk_by_type("FrSt").unwrap();
-        assert_eq!(&chunk.chunk_type().to_string(), "FrSt");
-        assert_eq!(&chunk.data_as_string().unwrap(), "I am the first chunk");
-    }
-
-    #[test]
-    fn test_append_chunk() {
-        let mut png = testing_png();
-        png.append_chunk(chunk_from_strings("TeSt", "Message").unwrap());
-        let chunk = png.chunk_by_type("TeSt").unwrap();
-        assert_eq!(&chunk.chunk_type().to_string(), "TeSt");
-        assert_eq!(&chunk.data_as_string().unwrap(), "Message");
-    }
-
-    #[test]
-    fn test_remove_first_chunk() {
-        let mut png = testing_png();
-        png.append_chunk(chunk_from_strings("TeSt", "Message").unwrap());
-        png.remove_first_chunk("TeSt").unwrap();
-        let chunk = png.chunk_by_type("TeSt");
-        assert!(chunk.is_none());
     }
 
     #[test]

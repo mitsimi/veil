@@ -4,6 +4,7 @@ use crc::Crc;
 use std::fmt;
 use std::io::{BufReader, Read};
 
+/// Represents a PNG chunk, including its type, data, and CRC.
 #[derive(Debug, Clone)]
 pub struct Chunk {
     length: u32,
@@ -13,6 +14,7 @@ pub struct Chunk {
 }
 
 impl Chunk {
+    /// Creates a new chunk with the given type and data, calculating the CRC.
     pub fn new(chunk_type: ChunkType, data: Vec<u8>) -> Self {
         let length = data.len() as u32;
 
@@ -27,26 +29,32 @@ impl Chunk {
         chunk
     }
 
+    /// Returns the length of the chunk data.
     pub fn length(&self) -> u32 {
         self.length
     }
 
+    /// Returns a reference to the chunk type.
     pub fn chunk_type(&self) -> &ChunkType {
         &self.chunk_type
     }
 
+    /// Returns a slice of the chunk data bytes.
     pub fn data(&self) -> &[u8] {
         &self.data
     }
 
+    /// Returns the CRC value of the chunk.
     pub fn crc(&self) -> u32 {
         self.crc
     }
 
+    /// Returns the chunk data as a UTF-8 string, or an error if invalid.
     pub fn data_as_string(&self) -> Result<String> {
-        Ok(String::from_utf8(self.data.clone()).unwrap())
+        String::from_utf8(self.data.clone()).map_err(|e| e.into())
     }
 
+    /// Serializes the chunk to a vector of bytes.
     pub fn as_bytes(&self) -> Vec<u8> {
         self.length
             .to_be_bytes()
@@ -58,6 +66,7 @@ impl Chunk {
             .collect()
     }
 
+    /// Calculates the CRC for the chunk type and data.
     fn calculate_crc(&self) -> u32 {
         let crc_data: Vec<u8> = self
             .chunk_type
@@ -70,6 +79,7 @@ impl Chunk {
     }
 }
 
+/// Implements conversion from a byte slice to a Chunk, validating the CRC.
 impl TryFrom<&[u8]> for Chunk {
     type Error = Error;
 

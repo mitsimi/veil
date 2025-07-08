@@ -1,50 +1,152 @@
-//! Veil - A PNG steganography library
-//! 
-//! This library provides functionality for encoding and decoding hidden messages
-//! in PNG files using custom chunks.
+//! Veil - A steganography library
+//!
+//! This library provides functionality for hiding and extracting data
+//! in various file formats using custom chunks with automatic detection.
 
-pub mod png;
+use std::str::FromStr;
+
 pub mod cmd;
+pub mod png;
 
-pub use png::{Chunk, ChunkType, Png};
 pub use cmd::{Cli, Commands};
 
 pub type Error = Box<dyn std::error::Error>;
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Encode a message into a PNG file
-pub fn encode_message(file_path: &str, chunk_type: &str, message: &str, output_path: Option<&str>) -> Result<()> {
-    use std::str::FromStr;
-    
-    let mut png = Png::from_file(file_path)?;
-    let chunk_type = ChunkType::from_str(chunk_type)?;
-    let chunk = Chunk::new(chunk_type, message.as_bytes().to_vec());
-    png.append_chunk(chunk);
-    
-    let output = output_path.unwrap_or(file_path);
-    png.to_file(output)?;
-    Ok(())
+/// Core trait for steganography operations across different file formats
+pub trait Steganography {
+    /// Hide data within this file format
+    fn hide_data(&mut self, data: &[u8]) -> Result<()>;
+
+    /// Extract all hidden data from this file
+    fn extract_data(&self) -> Result<Vec<u8>>;
+
+    /// Check if this file contains any hidden data
+    fn has_hidden_data(&self) -> bool;
+
+    /// Save the file (with any modifications) to the specified path
+    fn save_to_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()>;
 }
 
-/// Decode a message from a PNG file
-pub fn decode_message(file_path: &str, chunk_type: &str) -> Result<String> {
-    let png = Png::from_file(file_path)?;
-    let chunk = png.chunk_by_type(chunk_type).ok_or("Chunk not found")?;
-    let message = String::from_utf8(chunk.data().to_vec())?;
-    Ok(message)
+/// Enum representing different file formats that support steganography
+#[derive(Debug)]
+pub enum SteganographyFile {
+    Png(png::Png),
+    // Future formats will be added here:
+    // Jpeg(jpeg::Jpeg),
+    // Pdf(pdf::Pdf),
 }
 
-/// Remove a chunk from a PNG file
-pub fn remove_chunk(file_path: &str, chunk_type: &str) -> Result<()> {
-    let mut png = Png::from_file(file_path)?;
-    png.remove_first_chunk(chunk_type)?;
-    png.to_file(file_path)?;
-    Ok(())
+impl SteganographyFile {
+    pub fn from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
+        let path_ref = path.as_ref();
+
+        // TODO: examine file headers for more robust detection
+        if let Some(extension) = path_ref.extension() {
+            match extension.to_string_lossy().to_lowercase().as_str() {
+                "png" => {
+                    let png = png::Png::from_file(path)?;
+                    Ok(SteganographyFile::Png(png))
+                }
+                _ => Err(format!("Unsupported file format: {:?}", extension).into()),
+            }
+        } else {
+            Err("Could not determine file format - no extension found".into())
+        }
+    }
 }
 
-/// Print PNG file information
-pub fn print_png_info(file_path: &str) -> Result<()> {
-    let png = Png::from_file(file_path)?;
-    println!("{}", png);
-    Ok(())
-} 
+impl Steganography for SteganographyFile {
+    fn hide_data(&mut self, data: &[u8]) -> Result<()> {
+        match self {
+            SteganographyFile::Png(png) => {
+                let chunk_type = png::ChunkType::from_str("vEiL")?;
+                let chunk = png::Chunk::new(chunk_type, data.to_vec());
+
+                png.append_chunk(chunk);
+                Ok(())
+            }
+        }
+    }
+
+    fn extract_data(&self) -> Result<Vec<u8>> {
+        match self {
+            SteganographyFile::Png(png) => {
+                let custom_chunks = png.custom_chunks();
+
+                let veil_chunks: Vec<_> = custom_chunks
+                    .into_iter()
+                    .filter(|chunk| chunk.chunk_type().to_string() == "vEiL")
+                    .collect();
+
+                if veil_chunks.is_empty() {
+                    return Err("No hidden data found".into());
+                }
+
+                // TODO: For now, extract data from the first vEiL chunk
+                // In the future, we could concatenate multiple chunks
+                let data = veil_chunks[0].data().to_vec();
+                Ok(data)
+            }
+        }
+    }
+
+    fn has_hidden_data(&self) -> bool {
+        match self {
+            SteganographyFile::Png(png) => {
+                png.custom_chunks()
+                    .iter()
+                    .any(|chunk| chunk.chunk_type().to_string() == "vEiL")
+            }
+        }
+    }
+
+    fn save_to_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
+        match self {
+            SteganographyFile::Png(png) => png.to_file(path),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_steganography_end_to_end() {
+        let chunks = vec![
+            test_chunk("IHDR", b"fake header data"),
+            test_chunk("IDAT", b"fake image data"),
+            test_chunk("IEND", b""),
+        ];
+        let png = png::Png::from_chunks(chunks);
+        let mut stego_file = SteganographyFile::Png(png);
+
+        let secret_message = b"This is a secret message!";
+
+        assert!(!stego_file.has_hidden_data());
+
+        stego_file.hide_data(secret_message).unwrap();
+
+        assert!(stego_file.has_hidden_data());
+
+        let extracted = stego_file.extract_data().unwrap();
+        assert_eq!(extracted, secret_message);
+    }
+
+    #[test]
+    fn test_no_hidden_data_error() {
+        let chunks = vec![test_chunk("IHDR", b"fake header data")];
+        let png = png::Png::from_chunks(chunks);
+        let stego_file = SteganographyFile::Png(png);
+
+        assert!(stego_file.extract_data().is_err());
+        assert!(!stego_file.has_hidden_data());
+    }
+
+    fn test_chunk(chunk_type: &str, data: &[u8]) -> png::Chunk {
+        use std::str::FromStr;
+        let chunk_type = png::ChunkType::from_str(chunk_type).unwrap();
+        png::Chunk::new(chunk_type, data.to_vec())
+    }
+}

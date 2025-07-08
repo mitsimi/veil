@@ -4,46 +4,61 @@ use std::{
     str::FromStr,
 };
 
+/// Represents the type of a PNG chunk, stored as four ASCII bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChunkType {
     bytes: [u8; 4],
 }
 
 impl ChunkType {
+    /// Returns the four bytes representing the chunk type.
     pub fn bytes(&self) -> [u8; 4] {
         self.bytes
     }
 
+    /// Returns the chunk type as a string.
+    pub fn to_string(&self) -> String {
+        self.bytes.iter().map(|b| char::from(*b)).collect()
+    }
+
+    /// Returns true if the chunk is critical (first byte uppercase).
     pub fn is_critical(&self) -> bool {
         self.bytes[0] & 0b00100000 == 0b00000000
     }
 
+    /// Returns true if the chunk is public (second byte uppercase).
     pub fn is_public(&self) -> bool {
         self.bytes[1] & 0b00100000 == 0b00000000
     }
 
+    /// Returns true if the reserved bit (third byte) is valid (must be uppercase).
     pub fn is_reserved_bit_valid(&self) -> bool {
         !self.bytes[2] & 0b00100000 == 0b00100000
     }
 
+    /// Returns true if the chunk is safe to copy (fourth byte lowercase).
     pub fn is_safe_to_copy(&self) -> bool {
         self.bytes[3] & 0b00100000 == 0b00100000
     }
 
+    /// Returns true if the chunk type is valid (all bytes ASCII alphabetic and reserved bit is valid).
     pub fn is_valid(&self) -> bool {
         ChunkType::validate_bytes(self.bytes) && self.is_reserved_bit_valid()
     }
 
     /* Static methods */
+    /// Returns true if the given byte is a valid ASCII alphabetic character for a chunk type.
     pub fn is_valid_byte(byte: u8) -> bool {
         byte.is_ascii_alphabetic()
     }
 
+    /// Validates that all bytes are ASCII alphabetic.
     fn validate_bytes(bytes: [u8; 4]) -> bool {
         bytes.iter().all(|b| ChunkType::is_valid_byte(*b))
     }
 }
 
+/// Implements conversion from a 4-byte array to a ChunkType, validating the bytes.
 impl TryFrom<[u8; 4]> for ChunkType {
     type Error = Error;
 
@@ -60,6 +75,7 @@ impl TryFrom<[u8; 4]> for ChunkType {
     }
 }
 
+/// Implements conversion from a string to a ChunkType, validating the string length and bytes.
 impl FromStr for ChunkType {
     type Err = Error;
 

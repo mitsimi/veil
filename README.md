@@ -1,22 +1,14 @@
-# Veil - Multi-Format Steganography Tool
+# Veil - PNG Steganography Tool
 
-A Rust library and command-line tool for hiding and extracting data in various file formats using steganography techniques. Features automatic format detection and a clean abstraction for multiple file types.
+A Rust library and command-line tool for hiding and extracting data in PNG files using steganography. This project was created as a learning exercise to explore Rust's type system, error handling, and working with binary file formats.
 
 ## Features
 
-- **Check**: Detect if there is hidden data in a file
-- **Hide**: Hide text messages or files inside other files
-- **Extract**: Extract all hidden data from files
-- **Multi-Format Support**: Currently PNG (extensible design for more formats)
-- **Clean API**: Simple trait-based design for easy library usage
-
-### Planned:
-
-- **More File Formats**: Like JPEG or PDF
-- **Better Detection**: Use a more sophisticated approach to type detection (e.g.: headers)
-- **Multiple chunks**: Support splitting large data across multiple chunks
-- **Encryption**: Add optional encryption of hidden data
-- **Compression**: Compress data before hiding
+- **Check**: Detect if there is hidden data in a PNG file
+- **Hide**: Hide text messages or files inside PNG images
+- **Extract**: Extract hidden data from PNG files
+- **Clean API**: Simple trait-based design for library usage
+- **PNG Chunks**: Uses custom "vEiL" chunks to store hidden data
 
 ## Installation
 
@@ -54,7 +46,7 @@ The library provides a clean, extensible API through the `Steganography` trait:
 ```rust
 use veil::{SteganographyFile, Steganography};
 
-// Load any supported file format (automatic detection)
+// Load a PNG file
 let mut file = SteganographyFile::from_file("image.png")?;
 
 // Check if file contains hidden data
@@ -75,7 +67,7 @@ let message = String::from_utf8(hidden_data)?;
 println!("Secret: {}", message);
 ```
 
-#### Working with specific formats
+#### Working with PNG directly
 
 ```rust
 use veil::png::{Png, Chunk, ChunkType};
@@ -100,49 +92,15 @@ for chunk in custom_chunks {
 }
 ```
 
-#### Adding New File Formats
+## How It Works
 
-The library is designed for easy extension. To add a new format:
+Veil uses PNG's chunk-based structure to hide data. PNG files are composed of chunks, each with a type and data. The tool creates custom chunks with the type "vEiL" to store hidden data.
 
-```rust
-// 1. Add to the enum
-pub enum SteganographyFile {
-    Png(png::Png),
-    Jpeg(jpeg::Jpeg),  // New format
-}
+- **Leverages PNG's built-in chunk system** - No pixel manipulation required
+- **Preserves image integrity** - The image displays normally in any PNG viewer
+- **Supports any binary data** - Hide text, files, or any other data
+- **Standard compliant** - Generated files work with all PNG-compatible tools
 
-// 2. Update the match statements in the Steganography impl
-impl Steganography for SteganographyFile {
-    fn hide_data(&mut self, data: &[u8]) -> Result<()> {
-        match self {
-            SteganographyFile::Png(png) => { /* PNG logic */ }
-            SteganographyFile::Jpeg(jpeg) => { /* JPEG logic */ }
-        }
-    }
-    // ... other methods
-}
+## License
 
-// 3. Add detection logic in from_file()
-```
-
-## Supported File Formats
-
-### Currently Implemented
-
-- **PNG**: Uses custom chunks with type "vEiL" to store hidden data
-  - Leverages PNG's built-in chunk system
-  - Preserves image integrity and compatibility
-  - Supports any binary data
-
-### Planned Formats
-
-- **JPEG**: LSB (Least Significant Bit) manipulation in pixel data
-- **PDF**: Metadata insertion and hidden streams
-
-## Design Philosophy
-
-- **Simplicity**: Clean API with minimal complexity
-- **Extensibility**: Easy to add new file formats
-- **Safety**: Leverages Rust's type system for correctness
-- **Performance**: Zero-copy operations where possible
-- **Compatibility**: Generated files work with standard tools
+MIT
